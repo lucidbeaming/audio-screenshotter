@@ -12,11 +12,19 @@ import argparse
 import json
 import sys
 from dataclasses import asdict
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
 from audio_screenshotter import activity, correlate, devices, recorder, screenshots, transcribe
+
+RECORDINGS_DIR = Path("recordings")
+OUTPUT_DIR = Path("output")
+
+
+def timestamp() -> str:
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def cmd_devices(_args):
@@ -24,8 +32,9 @@ def cmd_devices(_args):
 
 
 def cmd_record(args):
+    output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{timestamp()}.mov"
     recorder.record(
-        output_path=Path(args.output),
+        output_path=output_path,
         video_device=args.video_device,
         audio_device=args.audio_device,
         framerate=args.framerate,
@@ -33,9 +42,10 @@ def cmd_record(args):
 
 
 def cmd_analyze(args):
+    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / f"{timestamp()}_{Path(args.video).stem}"
     analyze_recording(
         video_path=Path(args.video),
-        outdir=Path(args.outdir),
+        outdir=outdir,
         noise_threshold_db=args.noise_threshold,
         min_silence_duration=args.min_silence,
         lead_in=args.lead_in,
@@ -43,14 +53,15 @@ def cmd_analyze(args):
 
 
 def cmd_run(args):
-    output_path = Path(args.output)
+    ts = timestamp()
+    output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{ts}.mov"
     recorder.record(
         output_path=output_path,
         video_device=args.video_device,
         audio_device=args.audio_device,
         framerate=args.framerate,
     )
-    outdir = Path(args.outdir) if args.outdir else output_path.parent / f"{output_path.stem}_analysis"
+    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / f"{ts}_{output_path.stem}"
     analyze_recording(
         video_path=output_path,
         outdir=outdir,
@@ -107,7 +118,8 @@ def build_parser():
     sub.add_parser("devices", help="List avfoundation capture devices").set_defaults(func=cmd_devices)
 
     p_record = sub.add_parser("record", help="Record screen + mic (press 'q' to stop)")
-    p_record.add_argument("-o", "--output", default="recordings/session.mov")
+    p_record.add_argument("-o", "--output", default=None,
+                           help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
     p_record.add_argument("--video-device", default="1", help="avfoundation video device index")
     p_record.add_argument("--audio-device", default="0", help="avfoundation audio device index")
     p_record.add_argument("--framerate", type=int, default=30)
@@ -116,18 +128,20 @@ def build_parser():
     p_analyze = sub.add_parser("analyze", help="Analyze an existing recording")
     p_analyze.add_argument("video", help="Path to a recorded video file")
     p_analyze.add_argument("-o", "--outdir", default=None,
-                            help="Output directory (defaults to <video>_analysis)")
+                            help="Output directory (defaults to output/<timestamp>_<video-name>/)")
     p_analyze.add_argument("--noise-threshold", type=float, default=-30.0,
                             help="dB threshold below which audio is considered silence")
     p_analyze.add_argument("--min-silence", type=float, default=0.6,
                             help="Minimum silence duration (s) to split speech segments")
     p_analyze.add_argument("--lead-in", type=float, default=0.3,
                             help="Seconds after a segment starts to take the screenshot")
-    p_analyze.set_defaults(func=lambda a: cmd_analyze(_with_default_outdir(a)))
+    p_analyze.set_defaults(func=cmd_analyze)
 
     p_run = sub.add_parser("run", help="Record, then analyze, in one go")
-    p_run.add_argument("-o", "--output", default="recordings/session.mov")
-    p_run.add_argument("--outdir", default=None)
+    p_run.add_argument("-o", "--output", default=None,
+                        help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
+    p_run.add_argument("--outdir", default=None,
+                        help="Output directory (defaults to output/<timestamp>_<video-name>/)")
     p_run.add_argument("--video-device", default="1")
     p_run.add_argument("--audio-device", default="0")
     p_run.add_argument("--framerate", type=int, default=30)
@@ -137,13 +151,6 @@ def build_parser():
     p_run.set_defaults(func=cmd_run)
 
     return parser
-
-
-def _with_default_outdir(args):
-    if not args.outdir:
-        video_path = Path(args.video)
-        args.outdir = str(video_path.parent / f"{video_path.stem}_analysis")
-    return args
 
 
 def main():

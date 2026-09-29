@@ -46,30 +46,34 @@ AVFoundation audio devices:
 ```
 
 Record (press **q** in the terminal to stop — do not use Ctrl-C, it won't
-finalize the video file cleanly):
+finalize the video file cleanly). Videos and intermediate files (e.g. the
+extracted audio track) go in `recordings/`, a scratch area that's gitignored
+but tracked as an empty folder:
 
 ```bash
-python -m audio_screenshotter record -o recordings/demo.mov \
-  --video-device 1 --audio-device 0
+python -m audio_screenshotter record --video-device 1 --audio-device 0
+# -> recordings/recording_<timestamp>.mov
 ```
 
-Analyze an existing recording (extracts screenshots, transcribes, correlates):
+Analyze an existing recording (extracts screenshots, transcribes, correlates).
+Each run creates a new timestamped folder under `output/`, also gitignored
+but tracked as an empty folder:
 
 ```bash
-python -m audio_screenshotter analyze recordings/demo.mov
+python -m audio_screenshotter analyze recordings/recording_20260929_153000.mov
+# -> output/<timestamp>_recording_20260929_153000/
 ```
 
 Or do both in one step:
 
 ```bash
-python -m audio_screenshotter run -o recordings/demo.mov \
-  --video-device 1 --audio-device 0
+python -m audio_screenshotter run --video-device 1 --audio-device 0
 ```
 
-Output lands in `recordings/demo_analysis/`:
+Each analysis run's output folder contains:
 
 ```
-demo_analysis/
+output/20260929_153512_recording_20260929_153000/
   audio.wav
   screenshots/
     screenshot_0000.png

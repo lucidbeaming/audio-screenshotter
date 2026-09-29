@@ -33,10 +33,11 @@ dist/
 .idea/
 *.swp
 
-# Project recordings/output
-recordings/
-sessions/
-*_analysis/
+# Project recordings/output (folders are tracked via .gitkeep; contents are not)
+recordings/*
+!recordings/.gitkeep
+output/*
+!output/.gitkeep
 *.mov
 *.mp4
 *.wav
