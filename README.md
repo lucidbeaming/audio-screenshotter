@@ -26,6 +26,17 @@ Requires `ffmpeg` (and `ffprobe`, which ships with it) on `PATH`:
 brew install ffmpeg
 ```
 
+## macOS permissions
+
+The terminal app you run this from (Terminal, iTerm, etc.) needs both
+**Screen Recording** and **Microphone** permission:
+`System Settings > Privacy & Security > Screen Recording` /  `> Microphone`.
+
+macOS often doesn't apply a newly-granted permission to an already-running
+terminal process — if `record`/`run` fails to capture after you approve the
+prompt, **fully quit and reopen the terminal app** (not just close the tab)
+and try again.
+
 ## Usage
 
 Find your screen/mic device indices (macOS asks for screen-recording and
@@ -125,3 +136,17 @@ output/20260929_153512_recording_20260929_153000/
 - `record`/`run` are macOS-only right now (`ffmpeg -f avfoundation`).
 - Transcription requires `MISTRAL_API_KEY` in `.env` (never commit this file
   — it's already in `.gitignore`).
+
+## Project status / resuming later
+
+- GitHub: https://github.com/lucidbeaming/audio-screenshotter — `main` is
+  the stable branch, active work happens on `dev`.
+- Virtualenv is named `audishot/` (not `.venv`) — activate with
+  `source audishot/bin/activate`. It's gitignored; recreate it with
+  `python3 -m venv audishot && pip install -r requirements.txt` on a new
+  machine or if it's missing.
+- `.env` with `MISTRAL_API_KEY` must exist locally (gitignored, not in the
+  repo) — copy from `.env.example` and fill it in again if it's ever lost.
+- Device indices are cached per-machine in
+  `.audio_screenshotter_devices.json` (gitignored). If missing/stale, rerun
+  `python -m audio_screenshotter devices` to find them again.
