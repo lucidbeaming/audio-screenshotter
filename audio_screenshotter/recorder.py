@@ -1,12 +1,25 @@
 """Simultaneous screen + microphone recording via ffmpeg (macOS/avfoundation).
 
-Stopping is done from the keyboard by pressing 'q' in the terminal running
-this process. ffmpeg reads that keystroke from its own stdin and shuts the
-recording down cleanly (finalizing the container), which is why this module
-runs ffmpeg with an inherited, interactive stdin instead of Popen+CTRL-C.
+Controlled entirely from the keyboard while recording:
+  q  stop recording (finalizes the file, then the caller can process it)
+  p  pause / resume
+
+ffmpeg has no native pause, so pausing is implemented by sending SIGSTOP to
+the ffmpeg process (freezing it completely, capturing nothing) and SIGCONT
+to resume. Stopping is done by writing 'q' to ffmpeg's own stdin, which is
+how ffmpeg shuts itself down cleanly and finalizes the output container
+(the same as pressing 'q' in a normal interactive ffmpeg session, but
+forwarded programmatically since we take over stdin to read single
+keypresses without waiting for Enter).
 """
 
+import os
+import select
+import signal
 import subprocess
+import sys
+import termios
+import tty
 from pathlib import Path
 
 
@@ -41,23 +54,72 @@ def build_record_command(
     ]
 
 
+class _RawStdin:
+    """Put stdin into cbreak mode so single keypresses (q/p) are readable
+    without waiting for Enter, restoring the original terminal settings
+    afterwards no matter how the block exits."""
+
+    def __enter__(self):
+        self.fd = sys.stdin.fileno()
+        self.old_settings = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd)
+        return self
+
+    def __exit__(self, *exc_info):
+        termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
+
+
+def _listen_for_keys(proc: subprocess.Popen) -> None:
+    paused = False
+    with _RawStdin():
+        while proc.poll() is None:
+            ready, _, _ = select.select([sys.stdin], [], [], 0.2)
+            if not ready:
+                continue
+            ch = sys.stdin.read(1)
+
+            if ch == "q":
+                if paused:
+                    os.kill(proc.pid, signal.SIGCONT)
+                    paused = False
+                if proc.stdin:
+                    try:
+                        proc.stdin.write(b"q")
+                        proc.stdin.flush()
+                    except BrokenPipeError:
+                        pass
+                break
+
+            elif ch == "p":
+                if paused:
+                    os.kill(proc.pid, signal.SIGCONT)
+                    paused = False
+                    print("\nResumed. Press 'p' to pause, 'q' to stop.")
+                else:
+                    os.kill(proc.pid, signal.SIGSTOP)
+                    paused = True
+                    print("\nPaused. Press 'p' to resume, 'q' to stop.")
+
+
 def record(
     output_path: Path,
     video_device: str,
     audio_device: str,
     framerate: int = 30,
 ) -> None:
-    """Run ffmpeg interactively; the user stops it by pressing 'q'."""
+    """Record until the user presses 'q'. Pause/resume with 'p'."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = build_record_command(output_path, video_device, audio_device, framerate)
 
     print("Recording screen + microphone.")
-    print("Press 'q' in this terminal to stop the recording (do not use Ctrl-C).")
+    print("Press 'p' to pause/resume, 'q' to stop.")
     print(f"Command: {' '.join(cmd)}")
 
-    # Inherit stdin/stdout/stderr so ffmpeg can read the 'q' keypress and the
-    # user can see its live progress output.
-    subprocess.run(cmd)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    try:
+        _listen_for_keys(proc)
+    finally:
+        proc.wait()
 
     if not output_path.exists():
         raise RuntimeError(f"Recording did not produce an output file at {output_path}")

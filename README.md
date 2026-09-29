@@ -45,15 +45,23 @@ AVFoundation audio devices:
 [0] MacBook Pro Microphone
 ```
 
-Record (press **q** in the terminal to stop — do not use Ctrl-C, it won't
-finalize the video file cleanly). Videos and intermediate files (e.g. the
-extracted audio track) go in `recordings/`, a scratch area that's gitignored
-but tracked as an empty folder:
+Record. Videos and intermediate files (e.g. the extracted audio track) go in
+`recordings/`, a scratch area that's gitignored but tracked as an empty
+folder. While recording:
+
+- press **p** to pause/resume (freezes capture entirely — paused time isn't
+  in the final video)
+- press **q** to stop; the file is finalized cleanly (don't use Ctrl-C)
 
 ```bash
 python -m audio_screenshotter record --video-device 1 --audio-device 0
 # -> recordings/recording_<timestamp>.mov
 ```
+
+The device indices you pass are cached in `.audio_screenshotter_devices.json`
+(gitignored, machine-specific), so on future runs you can omit
+`--video-device`/`--audio-device` entirely and the last-used values are
+reused automatically. Pass either flag again to override the cache.
 
 Analyze an existing recording (extracts screenshots, transcribes, correlates).
 Each run creates a new timestamped folder under `output/`, also gitignored

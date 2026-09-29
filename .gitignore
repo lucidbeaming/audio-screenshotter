@@ -41,3 +41,6 @@ output/*
 *.mov
 *.mp4
 *.wav
+
+# Cached, machine-specific device indices
+.audio_screenshotter_devices.json

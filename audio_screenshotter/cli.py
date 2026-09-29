@@ -2,7 +2,7 @@
 
 Subcommands:
   devices   list avfoundation capture devices (to pick video/audio indices)
-  record    record screen + mic to a video file (press 'q' to stop)
+  record    record screen + mic to a video file (press 'q' to stop, 'p' to pause)
   analyze   detect speech activity, extract screenshots, transcribe, and
             write a correlated JSON report for an existing recording
   run       record, then analyze, in one go
@@ -17,7 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from audio_screenshotter import activity, correlate, devices, recorder, screenshots, transcribe
+from audio_screenshotter import activity, correlate, device_cache, devices, recorder, screenshots, transcribe
 
 RECORDINGS_DIR = Path("recordings")
 OUTPUT_DIR = Path("output")
@@ -33,10 +33,12 @@ def cmd_devices(_args):
 
 def cmd_record(args):
     output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{timestamp()}.mov"
+    video_device, audio_device = device_cache.resolve(args.video_device, args.audio_device)
+    print(f"Using video device {video_device}, audio device {audio_device}")
     recorder.record(
         output_path=output_path,
-        video_device=args.video_device,
-        audio_device=args.audio_device,
+        video_device=video_device,
+        audio_device=audio_device,
         framerate=args.framerate,
     )
 
@@ -55,12 +57,15 @@ def cmd_analyze(args):
 def cmd_run(args):
     ts = timestamp()
     output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{ts}.mov"
+    video_device, audio_device = device_cache.resolve(args.video_device, args.audio_device)
+    print(f"Using video device {video_device}, audio device {audio_device}")
     recorder.record(
         output_path=output_path,
-        video_device=args.video_device,
-        audio_device=args.audio_device,
+        video_device=video_device,
+        audio_device=audio_device,
         framerate=args.framerate,
     )
+    print("Recording stopped, processing...")
     outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / f"{ts}_{output_path.stem}"
     analyze_recording(
         video_path=output_path,
@@ -117,11 +122,13 @@ def build_parser():
 
     sub.add_parser("devices", help="List avfoundation capture devices").set_defaults(func=cmd_devices)
 
-    p_record = sub.add_parser("record", help="Record screen + mic (press 'q' to stop)")
+    p_record = sub.add_parser("record", help="Record screen + mic (press 'q' to stop, 'p' to pause)")
     p_record.add_argument("-o", "--output", default=None,
                            help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
-    p_record.add_argument("--video-device", default="1", help="avfoundation video device index")
-    p_record.add_argument("--audio-device", default="0", help="avfoundation audio device index")
+    p_record.add_argument("--video-device", default=None,
+                           help="avfoundation video device index (defaults to the cached value, then '1')")
+    p_record.add_argument("--audio-device", default=None,
+                           help="avfoundation audio device index (defaults to the cached value, then '0')")
     p_record.add_argument("--framerate", type=int, default=30)
     p_record.set_defaults(func=cmd_record)
 
@@ -142,8 +149,10 @@ def build_parser():
                         help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
     p_run.add_argument("--outdir", default=None,
                         help="Output directory (defaults to output/<timestamp>_<video-name>/)")
-    p_run.add_argument("--video-device", default="1")
-    p_run.add_argument("--audio-device", default="0")
+    p_run.add_argument("--video-device", default=None,
+                        help="avfoundation video device index (defaults to the cached value, then '1')")
+    p_run.add_argument("--audio-device", default=None,
+                        help="avfoundation audio device index (defaults to the cached value, then '0')")
     p_run.add_argument("--framerate", type=int, default=30)
     p_run.add_argument("--noise-threshold", type=float, default=-30.0)
     p_run.add_argument("--min-silence", type=float, default=0.6)
