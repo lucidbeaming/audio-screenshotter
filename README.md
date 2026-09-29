@@ -14,8 +14,8 @@ Built on `ffmpeg`/`ffprobe` (macOS `avfoundation` capture) and Python.
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv audishot
+source audishot/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # then fill in MISTRAL_API_KEY
 ```
@@ -25,6 +25,17 @@ Requires `ffmpeg` (and `ffprobe`, which ships with it) on `PATH`:
 ```bash
 brew install ffmpeg
 ```
+
+## macOS permissions
+
+The terminal app you run this from (Terminal, iTerm, etc.) needs both
+**Screen Recording** and **Microphone** permission:
+`System Settings > Privacy & Security > Screen Recording` /  `> Microphone`.
+
+macOS often doesn't apply a newly-granted permission to an already-running
+terminal process — if `record`/`run` fails to capture after you approve the
+prompt, **fully quit and reopen the terminal app** (not just close the tab)
+and try again.
 
 ## Usage
 
@@ -45,31 +56,43 @@ AVFoundation audio devices:
 [0] MacBook Pro Microphone
 ```
 
-Record (press **q** in the terminal to stop — do not use Ctrl-C, it won't
-finalize the video file cleanly):
+Record. Videos and intermediate files (e.g. the extracted audio track) go in
+`recordings/`, a scratch area that's gitignored but tracked as an empty
+folder. While recording:
+
+- press **p** to pause/resume (freezes capture entirely — paused time isn't
+  in the final video)
+- press **q** to stop; the file is finalized cleanly (don't use Ctrl-C)
 
 ```bash
-python -m audio_screenshotter record -o recordings/demo.mov \
-  --video-device 1 --audio-device 0
+python -m audio_screenshotter record --video-device 1 --audio-device 0
+# -> recordings/recording_<timestamp>.mov
 ```
 
-Analyze an existing recording (extracts screenshots, transcribes, correlates):
+The device indices you pass are cached in `.audio_screenshotter_devices.json`
+(gitignored, machine-specific), so on future runs you can omit
+`--video-device`/`--audio-device` entirely and the last-used values are
+reused automatically. Pass either flag again to override the cache.
+
+Analyze an existing recording (extracts screenshots, transcribes, correlates).
+Each run creates a new timestamped folder under `output/`, also gitignored
+but tracked as an empty folder:
 
 ```bash
-python -m audio_screenshotter analyze recordings/demo.mov
+python -m audio_screenshotter analyze recordings/recording_20260929_153000.mov
+# -> output/<timestamp>_recording_20260929_153000/
 ```
 
 Or do both in one step:
 
 ```bash
-python -m audio_screenshotter run -o recordings/demo.mov \
-  --video-device 1 --audio-device 0
+python -m audio_screenshotter run --video-device 1 --audio-device 0
 ```
 
-Output lands in `recordings/demo_analysis/`:
+Each analysis run's output folder contains:
 
 ```
-demo_analysis/
+output/20260929_153512_recording_20260929_153000/
   audio.wav
   screenshots/
     screenshot_0000.png
@@ -113,3 +136,17 @@ demo_analysis/
 - `record`/`run` are macOS-only right now (`ffmpeg -f avfoundation`).
 - Transcription requires `MISTRAL_API_KEY` in `.env` (never commit this file
   — it's already in `.gitignore`).
+
+## Project status / resuming later
+
+- GitHub: https://github.com/lucidbeaming/audio-screenshotter — `main` is
+  the stable branch, active work happens on `dev`.
+- Virtualenv is named `audishot/` (not `.venv`) — activate with
+  `source audishot/bin/activate`. It's gitignored; recreate it with
+  `python3 -m venv audishot && pip install -r requirements.txt` on a new
+  machine or if it's missing.
+- `.env` with `MISTRAL_API_KEY` must exist locally (gitignored, not in the
+  repo) — copy from `.env.example` and fill it in again if it's ever lost.
+- Device indices are cached per-machine in
+  `.audio_screenshotter_devices.json` (gitignored). If missing/stale, rerun
+  `python -m audio_screenshotter devices` to find them again.
