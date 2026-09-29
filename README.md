@@ -14,8 +14,8 @@ Built on `ffmpeg`/`ffprobe` (macOS `avfoundation` capture) and Python.
 ## Setup
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+python3 -m venv audishot
+source audishot/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # then fill in MISTRAL_API_KEY
 ```
