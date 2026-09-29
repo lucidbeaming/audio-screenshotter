@@ -23,11 +23,15 @@ import tty
 from pathlib import Path
 
 
+MAX_WIDTH = 1920
+MAX_HEIGHT = 1080
+
+
 def build_record_command(
     output_path: Path,
     video_device: str,
     audio_device: str,
-    framerate: int = 30,
+    framerate: int = 15,
     video_bitrate_preset: str = "ultrafast",
 ) -> list:
     """Build the ffmpeg command that records screen video + mic audio together.
@@ -35,21 +39,52 @@ def build_record_command(
     avfoundation lets one -i take a combined "video:audio" device index pair,
     so a single input captures both, keeping the two streams sample-aligned
     in one output container.
+
+    -r after -i forces a constant output frame rate; avfoundation otherwise
+    reports an unreliable input timebase that ffmpeg carries straight into
+    the mov container, producing files QuickTime/Preview can't open. The
+    scale filter caps capture at 1080p (downscaling only, never upscaling)
+    since screen recordings are for screenshots/transcription, not full-res
+    playback, and keeps dimensions even as libx264/yuv420p requires.
+
+    -pixel_format uyvy422 before -i requests a format the screen input
+    actually supports, skipping ffmpeg's default-then-retry negotiation
+    (which otherwise logs "Selected pixel format (yuv420p) is not
+    supported..." and overrides it to uyvy422 anyway). This does NOT
+    suppress AVFoundation's separate "Configuration of video device
+    failed, falling back to default" warning -- that one is logged
+    unconditionally for AVCaptureScreenInput regardless of any option
+    passed here (verified: it appears even with zero avfoundation options
+    set), since ffmpeg's device-locking/activeFormat negotiation path
+    doesn't apply to screen-capture inputs. It's cosmetic; output still
+    ends up at the requested framerate/resolution via -r/-vf below.
+    The final -pix_fmt yuv420p (an output option) still converts to what
+    libx264 needs during encode.
     """
     input_spec = f"{video_device}:{audio_device}"
+    scale = (
+        f"scale='min({MAX_WIDTH},iw)':'min({MAX_HEIGHT},ih)'"
+        ":force_original_aspect_ratio=decrease:force_divisible_by=2"
+    )
     return [
         "ffmpeg",
         "-hide_banner",
         "-loglevel", "info",
         "-f", "avfoundation",
+        "-pixel_format", "uyvy422",
         "-framerate", str(framerate),
         "-i", input_spec,
+        "-r", str(framerate),
+        "-vf", scale,
         "-c:v", "libx264",
         "-preset", video_bitrate_preset,
         "-crf", "23",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "192k",
+        "-metadata", "encoding_tool=audio-screenshotter",
+        "-metadata", f"comment=framerate={framerate}fps, max {MAX_WIDTH}x{MAX_HEIGHT}, "
+                     f"video_device={video_device}, audio_device={audio_device}",
         str(output_path),
     ]
 
@@ -88,6 +123,7 @@ def _listen_for_keys(proc: subprocess.Popen) -> None:
                         proc.stdin.flush()
                     except BrokenPipeError:
                         pass
+                print("\nStopping, finalizing recording...")
                 break
 
             elif ch == "p":
@@ -105,22 +141,30 @@ def record(
     output_path: Path,
     video_device: str,
     audio_device: str,
-    framerate: int = 30,
+    framerate: int = 15,
 ) -> None:
     """Record until the user presses 'q'. Pause/resume with 'p'."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = build_record_command(output_path, video_device, audio_device, framerate)
+    log_path = output_path.with_suffix(".log")
 
     print("Recording screen + microphone.")
     print("Press 'p' to pause/resume, 'q' to stop.")
-    print(f"Command: {' '.join(cmd)}")
 
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    try:
-        _listen_for_keys(proc)
-    finally:
-        proc.wait()
+    with open(log_path, "w") as log_file:
+        log_file.write(f"Command: {' '.join(cmd)}\n\n")
+        log_file.flush()
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log_file, stderr=subprocess.STDOUT)
+        try:
+            _listen_for_keys(proc)
+        finally:
+            proc.wait()
 
     if not output_path.exists():
-        raise RuntimeError(f"Recording did not produce an output file at {output_path}")
+        tail = "\n".join(log_path.read_text().splitlines()[-20:])
+        raise RuntimeError(
+            f"Recording did not produce an output file at {output_path}\n"
+            f"ffmpeg log ({log_path}), last 20 lines:\n{tail}"
+        )
+    log_path.unlink()
     print(f"Saved recording to {output_path}")

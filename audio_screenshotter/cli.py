@@ -44,7 +44,7 @@ def cmd_record(args):
 
 
 def cmd_analyze(args):
-    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / f"{timestamp()}_{Path(args.video).stem}"
+    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / Path(args.video).stem
     analyze_recording(
         video_path=Path(args.video),
         outdir=outdir,
@@ -66,7 +66,7 @@ def cmd_run(args):
         framerate=args.framerate,
     )
     print("Recording stopped, processing...")
-    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / f"{ts}_{output_path.stem}"
+    outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / output_path.stem
     analyze_recording(
         video_path=output_path,
         outdir=outdir,
@@ -129,13 +129,13 @@ def build_parser():
                            help="avfoundation video device index (defaults to the cached value, then '1')")
     p_record.add_argument("--audio-device", default=None,
                            help="avfoundation audio device index (defaults to the cached value, then '0')")
-    p_record.add_argument("--framerate", type=int, default=30)
+    p_record.add_argument("--framerate", type=int, default=15)
     p_record.set_defaults(func=cmd_record)
 
     p_analyze = sub.add_parser("analyze", help="Analyze an existing recording")
     p_analyze.add_argument("video", help="Path to a recorded video file")
     p_analyze.add_argument("-o", "--outdir", default=None,
-                            help="Output directory (defaults to output/<timestamp>_<video-name>/)")
+                            help="Output directory (defaults to output/<video-name>/)")
     p_analyze.add_argument("--noise-threshold", type=float, default=-30.0,
                             help="dB threshold below which audio is considered silence")
     p_analyze.add_argument("--min-silence", type=float, default=0.6,
@@ -148,12 +148,12 @@ def build_parser():
     p_run.add_argument("-o", "--output", default=None,
                         help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
     p_run.add_argument("--outdir", default=None,
-                        help="Output directory (defaults to output/<timestamp>_<video-name>/)")
+                        help="Output directory (defaults to output/<video-name>/)")
     p_run.add_argument("--video-device", default=None,
                         help="avfoundation video device index (defaults to the cached value, then '1')")
     p_run.add_argument("--audio-device", default=None,
                         help="avfoundation audio device index (defaults to the cached value, then '0')")
-    p_run.add_argument("--framerate", type=int, default=30)
+    p_run.add_argument("--framerate", type=int, default=15)
     p_run.add_argument("--noise-threshold", type=float, default=-30.0)
     p_run.add_argument("--min-silence", type=float, default=0.6)
     p_run.add_argument("--lead-in", type=float, default=0.3)
