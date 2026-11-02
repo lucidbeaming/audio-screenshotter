@@ -2,7 +2,8 @@
 
 Subcommands:
   devices   list avfoundation capture devices (to pick video/audio indices)
-  record    record screen + mic to a video file (press 'q' to stop, 'p' to pause)
+  record    record screen + mic (+ system audio as a second track) to a video
+            file (press 'q' to stop, 'p' to pause)
   analyze   detect speech activity, extract screenshots, transcribe, and
             write a correlated JSON report for an existing recording
   run       record, then analyze, in one go
@@ -40,6 +41,7 @@ def cmd_record(args):
         video_device=video_device,
         audio_device=audio_device,
         framerate=args.framerate,
+        capture_system_audio=not args.no_system_audio,
     )
 
 
@@ -64,6 +66,7 @@ def cmd_run(args):
         video_device=video_device,
         audio_device=audio_device,
         framerate=args.framerate,
+        capture_system_audio=not args.no_system_audio,
     )
     print("Recording stopped, processing...")
     outdir = Path(args.outdir) if args.outdir else OUTPUT_DIR / output_path.stem
@@ -76,42 +79,62 @@ def cmd_run(args):
     )
 
 
+# Audio tracks in a recording, in order: what the narrator said into the
+# mic, then (when recorded) what the Mac itself played, e.g. VoiceOver.
+SOURCES = [
+    {"source": "mic", "wav": "audio.wav", "screenshot_prefix": "screenshot"},
+    {"source": "system", "wav": "system_audio.wav", "screenshot_prefix": "system"},
+]
+
+
 def analyze_recording(video_path: Path, outdir: Path, noise_threshold_db: float,
                        min_silence_duration: float, lead_in: float):
     outdir.mkdir(parents=True, exist_ok=True)
-    audio_path = outdir / "audio.wav"
     screenshots_dir = outdir / "screenshots"
     report_path = outdir / "transcript.json"
 
-    print("Extracting audio track...")
-    activity.extract_audio(video_path, audio_path)
+    track_count = activity.count_audio_tracks(video_path)
+    report = {"video": str(video_path), "audio": None, "system_audio": None,
+              "speech_segments": [], "screenshots": [], "transcript_segments": [], "correlations": []}
 
-    print("Detecting speech activity...")
-    segments = activity.detect_speech_segments(
-        audio_path,
-        noise_threshold_db=noise_threshold_db,
-        min_silence_duration=min_silence_duration,
-    )
-    print(f"Found {len(segments)} speech segment(s).")
+    for track, source in enumerate(SOURCES[:track_count]):
+        name = source["source"]
+        audio_path = outdir / source["wav"]
+        report["audio" if name == "mic" else "system_audio"] = str(audio_path)
 
-    print("Extracting screenshots...")
-    shots = screenshots.extract_frames_for_segments(video_path, segments, screenshots_dir, lead_in=lead_in)
+        print(f"[{name}] Extracting audio track...")
+        activity.extract_audio(video_path, audio_path, track=track)
 
-    print("Transcribing audio via Mistral...")
-    response = transcribe.transcribe_audio(audio_path)
-    transcript_segments = transcribe.extract_segments(response)
+        print(f"[{name}] Detecting speech activity...")
+        segments = activity.detect_speech_segments(
+            audio_path,
+            noise_threshold_db=noise_threshold_db,
+            min_silence_duration=min_silence_duration,
+        )
+        print(f"[{name}] Found {len(segments)} speech segment(s).")
 
-    print("Correlating transcript with screenshots...")
-    correlations = correlate.correlate(transcript_segments, shots)
+        print(f"[{name}] Extracting screenshots...")
+        shots = screenshots.extract_frames_for_segments(
+            video_path, segments, screenshots_dir, lead_in=lead_in, prefix=source["screenshot_prefix"])
 
-    report = {
-        "video": str(video_path),
-        "audio": str(audio_path),
-        "speech_segments": [asdict(s) for s in segments],
-        "screenshots": shots,
-        "transcript_segments": transcript_segments,
-        "correlations": correlations,
-    }
+        print(f"[{name}] Transcribing audio via Mistral...")
+        response = transcribe.transcribe_audio(audio_path)
+        transcript_segments = transcribe.extract_segments(response)
+
+        print(f"[{name}] Correlating transcript with screenshots...")
+        correlations = correlate.correlate(transcript_segments, shots)
+
+        for key, items in [("speech_segments", [asdict(s) for s in segments]),
+                           ("screenshots", shots),
+                           ("transcript_segments", transcript_segments),
+                           ("correlations", correlations)]:
+            report[key].extend({**item, "source": name} for item in items)
+
+    # Interleave the sources into one timeline.
+    for key in ("speech_segments", "transcript_segments", "correlations"):
+        report[key].sort(key=lambda item: item["start"])
+    report["screenshots"].sort(key=lambda item: item["timestamp"])
+
     report_path.write_text(json.dumps(report, indent=2))
     print(f"Wrote report to {report_path}")
 
@@ -122,7 +145,7 @@ def build_parser():
 
     sub.add_parser("devices", help="List avfoundation capture devices").set_defaults(func=cmd_devices)
 
-    p_record = sub.add_parser("record", help="Record screen + mic (press 'q' to stop, 'p' to pause)")
+    p_record = sub.add_parser("record", help="Record screen + mic + system audio (press 'q' to stop, 'p' to pause)")
     p_record.add_argument("-o", "--output", default=None,
                            help="Video output path (defaults to recordings/recording_<timestamp>.mov)")
     p_record.add_argument("--video-device", default=None,
@@ -130,6 +153,8 @@ def build_parser():
     p_record.add_argument("--audio-device", default=None,
                            help="avfoundation audio device index (defaults to the cached value, then '0')")
     p_record.add_argument("--framerate", type=int, default=15)
+    p_record.add_argument("--no-system-audio", action="store_true",
+                           help="Don't record system audio (e.g. VoiceOver) as a second audio track")
     p_record.set_defaults(func=cmd_record)
 
     p_analyze = sub.add_parser("analyze", help="Analyze an existing recording")
@@ -154,6 +179,8 @@ def build_parser():
     p_run.add_argument("--audio-device", default=None,
                         help="avfoundation audio device index (defaults to the cached value, then '0')")
     p_run.add_argument("--framerate", type=int, default=15)
+    p_run.add_argument("--no-system-audio", action="store_true",
+                        help="Don't record system audio (e.g. VoiceOver) as a second audio track")
     p_run.add_argument("--noise-threshold", type=float, default=-30.0)
     p_run.add_argument("--min-silence", type=float, default=0.6)
     p_run.add_argument("--lead-in", type=float, default=0.3)

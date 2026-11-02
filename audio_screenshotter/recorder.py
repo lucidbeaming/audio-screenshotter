@@ -1,4 +1,5 @@
-"""Simultaneous screen + microphone recording via ffmpeg (macOS/avfoundation).
+"""Simultaneous screen + microphone recording via ffmpeg (macOS/avfoundation),
+optionally with system audio (see system_audio.py) as a second audio track.
 
 Controlled entirely from the keyboard while recording:
   q  stop recording (finalizes the file, then the caller can process it)
@@ -6,7 +7,8 @@ Controlled entirely from the keyboard while recording:
 
 ffmpeg has no native pause, so pausing is implemented by sending SIGSTOP to
 the ffmpeg process (freezing it completely, capturing nothing) and SIGCONT
-to resume. Stopping is done by writing 'q' to ffmpeg's own stdin, which is
+to resume; the system audio helper, if running, is paused the same way.
+Stopping is done by writing 'q' to ffmpeg's own stdin, which is
 how ffmpeg shuts itself down cleanly and finalizes the output container
 (the same as pressing 'q' in a normal interactive ffmpeg session, but
 forwarded programmatically since we take over stdin to read single
@@ -21,6 +23,8 @@ import sys
 import termios
 import tty
 from pathlib import Path
+
+from audio_screenshotter import system_audio
 
 
 MAX_WIDTH = 1920
@@ -104,8 +108,18 @@ class _RawStdin:
         termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old_settings)
 
 
-def _listen_for_keys(proc: subprocess.Popen) -> None:
+def _listen_for_keys(proc: subprocess.Popen, system=None) -> None:
     paused = False
+
+    def set_paused(pause: bool) -> None:
+        nonlocal paused
+        os.kill(proc.pid, signal.SIGSTOP if pause else signal.SIGCONT)
+        if system and pause:
+            system.pause()
+        elif system:
+            system.resume()
+        paused = pause
+
     with _RawStdin():
         while proc.poll() is None:
             ready, _, _ = select.select([sys.stdin], [], [], 0.2)
@@ -115,8 +129,7 @@ def _listen_for_keys(proc: subprocess.Popen) -> None:
 
             if ch == "q":
                 if paused:
-                    os.kill(proc.pid, signal.SIGCONT)
-                    paused = False
+                    set_paused(False)
                 if proc.stdin:
                     try:
                         proc.stdin.write(b"q")
@@ -128,12 +141,10 @@ def _listen_for_keys(proc: subprocess.Popen) -> None:
 
             elif ch == "p":
                 if paused:
-                    os.kill(proc.pid, signal.SIGCONT)
-                    paused = False
+                    set_paused(False)
                     print("\nResumed. Press 'p' to pause, 'q' to stop.")
                 else:
-                    os.kill(proc.pid, signal.SIGSTOP)
-                    paused = True
+                    set_paused(True)
                     print("\nPaused. Press 'p' to resume, 'q' to stop.")
 
 
@@ -142,13 +153,26 @@ def record(
     video_device: str,
     audio_device: str,
     framerate: int = 15,
+    capture_system_audio: bool = True,
 ) -> None:
-    """Record until the user presses 'q'. Pause/resume with 'p'."""
+    """Record until the user presses 'q'. Pause/resume with 'p'.
+
+    With capture_system_audio, the Mac's audio output is recorded alongside
+    and added to the video as a second audio track once recording stops.
+    """
     output_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = build_record_command(output_path, video_device, audio_device, framerate)
     log_path = output_path.with_suffix(".log")
+    system_wav = output_path.with_name(output_path.stem + ".system.wav")
 
-    print("Recording screen + microphone.")
+    system = None
+    if capture_system_audio:
+        system = system_audio.SystemAudioCapture(system_wav)
+        system.start()
+        system.wait_until_capturing()
+
+    sources = "screen + microphone + system audio" if system else "screen + microphone"
+    print(f"Recording {sources}.")
     print("Press 'p' to pause/resume, 'q' to stop.")
 
     with open(log_path, "w") as log_file:
@@ -156,9 +180,11 @@ def record(
         log_file.flush()
         proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=log_file, stderr=subprocess.STDOUT)
         try:
-            _listen_for_keys(proc)
+            _listen_for_keys(proc, system)
         finally:
             proc.wait()
+            if system:
+                system.stop()
 
     if not output_path.exists():
         tail = "\n".join(log_path.read_text().splitlines()[-20:])
@@ -166,5 +192,11 @@ def record(
             f"Recording did not produce an output file at {output_path}\n"
             f"ffmpeg log ({log_path}), last 20 lines:\n{tail}"
         )
+
+    if system:
+        offset = system.first_pts - system_audio.ffmpeg_input_start(log_path.read_text())
+        system_audio.add_system_track(output_path, system_wav, offset)
+        system_wav.unlink()
+
     log_path.unlink()
     print(f"Saved recording to {output_path}")

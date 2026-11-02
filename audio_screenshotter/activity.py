@@ -14,14 +14,30 @@ class Segment:
     end: float
 
 
-def extract_audio(video_path: Path, audio_path: Path) -> Path:
-    """Pull the audio track out as mono 16kHz WAV, suitable for both
-    silence detection and transcription."""
+def count_audio_tracks(video_path: Path) -> int:
+    cmd = [
+        "ffprobe", "-v", "error", "-select_streams", "a",
+        "-show_entries", "stream=index", "-of", "csv=p=0",
+        str(video_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    return len(result.stdout.split())
+
+
+def extract_audio(video_path: Path, audio_path: Path, track: int = 0) -> Path:
+    """Pull one audio track (0 = microphone, 1 = system audio when recorded)
+    out as mono 16kHz WAV, suitable for both silence detection and
+    transcription.
+
+    Pausing leaves gaps in the track's timestamps; aresample=async fills them
+    with silence so WAV time keeps matching video time (a plain decode would
+    close the gaps, shifting everything after a pause earlier)."""
     audio_path.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
         "-i", str(video_path),
-        "-vn", "-ac", "1", "-ar", "16000",
+        "-map", f"0:a:{track}", "-af", "aresample=async=1:first_pts=0",
+        "-ac", "1", "-ar", "16000",
         str(audio_path),
     ]
     subprocess.run(cmd, check=True)

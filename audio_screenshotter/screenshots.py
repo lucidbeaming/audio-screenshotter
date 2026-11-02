@@ -18,15 +18,17 @@ def extract_frame(video_path: Path, timestamp: float, out_path: Path) -> Path:
     return out_path
 
 
-def extract_frames_for_segments(video_path: Path, segments, outdir: Path, lead_in: float = 0.3):
+def extract_frames_for_segments(video_path: Path, segments, outdir: Path, lead_in: float = 0.3,
+                                prefix: str = "screenshot"):
     """Take one screenshot per speech segment, offset slightly after the
     segment start so the on-screen action has begun (lead_in seconds).
+    Files are named <prefix>_0000.png, <prefix>_0001.png, ...
     """
     outdir.mkdir(parents=True, exist_ok=True)
     results = []
     for i, segment in enumerate(segments):
         timestamp = min(segment.start + lead_in, segment.end)
-        out_path = outdir / f"screenshot_{i:04d}.png"
+        out_path = outdir / f"{prefix}_{i:04d}.png"
         extract_frame(video_path, timestamp, out_path)
         results.append({"file": str(out_path), "timestamp": timestamp,
                          "segment_start": segment.start, "segment_end": segment.end})

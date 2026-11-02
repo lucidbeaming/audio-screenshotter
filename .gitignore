@@ -45,3 +45,6 @@ output/*
 
 # Cached, machine-specific device indices
 .audio_screenshotter_devices.json
+
+# Compiled system audio helper (built on first use from audio_screenshotter/swift/)
+audio_screenshotter/swift/build/
