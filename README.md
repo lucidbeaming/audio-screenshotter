@@ -1,5 +1,7 @@
 # audio-screenshotter
 
+Record screen + mic narration, then extract screenshots aligned to a transcript.
+
 Record your screen and microphone at the same time (e.g. narrating a walkthrough
 of a website or app), then automatically:
 
@@ -9,22 +11,38 @@ of a website or app), then automatically:
 4. correlate transcript text with the nearest screenshot and write it all to
    a single `transcript.json`
 
-Built on `ffmpeg`/`ffprobe` (macOS `avfoundation` capture) and Python.
+The result is a set of screenshots, each paired with what you were saying at
+that moment: a quick way to turn a narrated walkthrough into documentation,
+a bug report or a review. See [`transcript.json` shape](#transcriptjson-shape)
+below for the output.
 
-## Setup
+## Requirements
+
+- Python 3.9+
+- `ffmpeg` and `ffprobe` on `PATH` (`brew install ffmpeg`)
+- A [Mistral API key](https://console.mistral.ai/api-keys) for transcription
+- **macOS** for the built-in `record` and `run` commands, which capture with
+  ffmpeg's `avfoundation` input. `analyze` works on any OS; see
+  [Recording on Linux or Windows](#recording-on-linux-or-windows).
+
+## Install
 
 ```bash
+git clone https://github.com/lucidbeaming/audio-screenshotter.git
+cd audio-screenshotter
 python3 -m venv audishot
 source audishot/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # then fill in MISTRAL_API_KEY
 ```
 
-Requires `ffmpeg` (and `ffprobe`, which ships with it) on `PATH`:
+## Configuration
 
-```bash
-brew install ffmpeg
-```
+| Variable          | Required | Description                                           |
+| ----------------- | -------- | ----------------------------------------------------- |
+| `MISTRAL_API_KEY` | Yes      | Used by `analyze`/`run` to call Voxtral speech-to-text |
+
+`.env` is gitignored; never commit it.
 
 ## macOS permissions
 
@@ -101,7 +119,7 @@ output/20260929_153512_recording_20260929_153000/
   transcript.json
 ```
 
-`transcript.json` shape:
+### `transcript.json` shape
 
 ```json
 {
@@ -131,16 +149,50 @@ output/20260929_153512_recording_20260929_153000/
 - `--lead-in` (default `0.3`s): how far into a speech segment to take the
   screenshot, so the on-screen action has caught up with the narration.
 
-## Notes
+## Recording on Linux or Windows
 
-- `record`/`run` are macOS-only right now (`ffmpeg -f avfoundation`).
-- Transcription requires `MISTRAL_API_KEY` in `.env` (never commit this file
-  — it's already in `.gitignore`).
+`record` and `run` use macOS-only capture (ffmpeg's `avfoundation` input and
+the Unix terminal key handling for pause). On other systems, record with
+ffmpeg directly and press **q** in the ffmpeg window to stop, then run
+`analyze` on the file. Any video with an audio track that ffmpeg can read
+works.
 
-## Project status / resuming later
+Linux (X11 screen + PulseAudio/PipeWire default microphone):
 
-- GitHub: https://github.com/lucidbeaming/audio-screenshotter — `main` is
-  the stable branch, active work happens on `dev`.
+```bash
+ffmpeg -f x11grab -framerate 15 -i "$DISPLAY" -f pulse -i default \
+  -c:v libx264 -preset ultrafast -c:a aac recordings/walkthrough.mkv
+python -m audio_screenshotter analyze recordings/walkthrough.mkv
+```
+
+On Wayland, `x11grab` only sees XWayland windows; record with a portal-based
+tool such as OBS or GNOME's built-in recorder (with a microphone source
+enabled) instead, then `analyze` the result.
+
+Windows (list microphone names first with
+`ffmpeg -list_devices true -f dshow -i dummy`):
+
+```powershell
+ffmpeg -f gdigrab -framerate 15 -i desktop -f dshow -i audio="Microphone (Realtek Audio)" `
+  -c:v libx264 -preset ultrafast -c:a aac recordings\walkthrough.mkv
+python -m audio_screenshotter analyze recordings\walkthrough.mkv
+```
+
+## How it works
+
+1. `activity.py` runs ffmpeg's `silencedetect` filter over the audio track and
+   turns the silence boundaries into speech segments.
+2. `screenshots.py` grabs one frame per segment, `--lead-in` seconds after it
+   starts.
+3. `transcribe.py` sends the extracted `audio.wav` to Mistral's
+   `voxtral-mini-latest` model and keeps the timestamped segments.
+4. `correlate.py` pairs each transcript segment with a screenshot taken
+   inside it, or failing that the nearest one in time, and writes
+   `transcript.json`.
+
+## Development
+
+- `main` is the stable branch; active work happens on `dev`.
 - Virtualenv is named `audishot/` (not `.venv`) — activate with
   `source audishot/bin/activate`. It's gitignored; recreate it with
   `python3 -m venv audishot && pip install -r requirements.txt` on a new
@@ -150,6 +202,13 @@ output/20260929_153512_recording_20260929_153000/
 - Device indices are cached per-machine in
   `.audio_screenshotter_devices.json` (gitignored). If missing/stale, rerun
   `python -m audio_screenshotter devices` to find them again.
+
+## Related projects
+
+- [mutant](https://github.com/lucidbeaming/mutant): desktop batch media
+  converter built on ffmpeg and ImageMagick
+- [ffmpeg-utilities](https://github.com/lucidbeaming/ffmpeg-utilities): a
+  collection of ffmpeg scripts and snippets
 
 ## License
 
