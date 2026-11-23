@@ -4,6 +4,10 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-23
+
+First release. `analyze` now starts on Windows, and the README covers recording on Linux and Windows with ffmpeg, then analyzing the file.
+
 ### Added
 - MIT license (#2)
 
@@ -15,3 +19,6 @@ All notable changes to this project are documented here. The format is based on 
 
 ### Changed
 - `.gitignore` aligned with the portfolio's common block: logs, Windows thumbnails, Sublime workspaces, shared `.vscode/extensions.json` (#4)
+
+[Unreleased]: https://github.com/lucidbeaming/audio-screenshotter/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/lucidbeaming/audio-screenshotter/releases/tag/v1.0.0
