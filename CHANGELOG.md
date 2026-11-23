@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on 
 ### Added
 - MIT license (#2)
 
+### Added
+- README: requirements, configuration, how it works, recording on Linux/Windows with ffmpeg + `analyze`, related projects (#8)
+
 ### Fixed
 - `analyze` starts on Windows: the recorder (which needs Unix-only `termios`) is imported only by `record`/`run` (#6)
 
