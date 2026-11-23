@@ -17,7 +17,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from audio_screenshotter import activity, correlate, device_cache, devices, recorder, screenshots, transcribe
+from audio_screenshotter import activity, correlate, device_cache, devices, screenshots, transcribe
 
 RECORDINGS_DIR = Path("recordings")
 OUTPUT_DIR = Path("output")
@@ -35,6 +35,10 @@ def cmd_record(args):
     output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{timestamp()}.mov"
     video_device, audio_device = device_cache.resolve(args.video_device, args.audio_device)
     print(f"Using video device {video_device}, audio device {audio_device}")
+    # Imported here: recorder needs the Unix-only termios/tty modules, and
+    # analyze should still work where they don't exist (Windows).
+    from audio_screenshotter import recorder
+
     recorder.record(
         output_path=output_path,
         video_device=video_device,
@@ -59,6 +63,10 @@ def cmd_run(args):
     output_path = Path(args.output) if args.output else RECORDINGS_DIR / f"recording_{ts}.mov"
     video_device, audio_device = device_cache.resolve(args.video_device, args.audio_device)
     print(f"Using video device {video_device}, audio device {audio_device}")
+    # Imported here: recorder needs the Unix-only termios/tty modules, and
+    # analyze should still work where they don't exist (Windows).
+    from audio_screenshotter import recorder
+
     recorder.record(
         output_path=output_path,
         video_device=video_device,
