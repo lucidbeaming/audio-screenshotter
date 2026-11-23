@@ -150,3 +150,7 @@ output/20260929_153512_recording_20260929_153000/
 - Device indices are cached per-machine in
   `.audio_screenshotter_devices.json` (gitignored). If missing/stale, rerun
   `python -m audio_screenshotter devices` to find them again.
+
+## License
+
+[MIT](LICENSE).
