@@ -2,6 +2,8 @@
 
 Record screen + mic narration, then extract screenshots aligned to a transcript.
 
+Documentation: [joshuacurry.dev/audio-screenshotter](https://joshuacurry.dev/audio-screenshotter)
+
 Record your screen and microphone at the same time (e.g. narrating a walkthrough
 of a website or app), then automatically:
 
